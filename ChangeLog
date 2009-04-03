@@ -1,3 +1,6 @@
+=Version 0.1.3= NOT YET RELEASED
+  * simpler error when load fails for erlrc_lib:load_application 
+
 =Version 0.1.2=
   * erlrcdynamic tests verify that correct module version was called
   * erlrcdynamic:unload now calls application:unload

@@ -46,7 +46,7 @@ load_application (App) ->
       ok ->
 	ok;
       { error, LoadReason } ->
-	throw ({ load_failed, Spec, LoadReason })
+	throw ({ error, LoadReason })
     end
   catch
     throw:Error -> { error, Error }
