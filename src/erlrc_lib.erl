@@ -63,7 +63,7 @@ get_apps_dir () ->
   Root ++ "/applications".
 
 %% @private
-load_resource_file (AppsDir, App) ->
+load_resource_file (AppsDir, App) when is_atom (App) ->
   ResourceBasename = atom_to_list (App) ++ ".app",
 
   % try override ERLRC_ROOT/applications/APPLICATION.app
@@ -106,7 +106,7 @@ appspec_merge ({ application, App, Overrides }, { application, App, Source }) ->
   appspec_merge (App, Overrides, Source).
 
 appspec_merge (App, Overrides, Source)
-  when is_list (Source), is_list (Overrides) ->
+  when is_atom (App), is_list (Source), is_list (Overrides) ->
     S = lists:ukeysort (1, Source),
     O = lists:ukeysort (1, Overrides),
     { application, App, appspec_sub_merge (S, O, S) }.
