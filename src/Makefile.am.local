@@ -23,11 +23,13 @@ dist_bin_SCRIPTS =		\
   erlrc-downgrade		\
   erlrc-eval			\
   erlrc-hooks			\
+  erlrc-makeappup		\
   erlrc-start			\
   erlrc-stop			\
   erlrc-upgrade
 
 noinst_DATA =			\
+  $(dist_bin_SCRIPTS:%=.%.script_ok)
   $(libexec_SCRIPTS:%=.%.script_ok)
 
 %.erl: %.erl.patch

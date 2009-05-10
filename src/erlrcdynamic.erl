@@ -8,6 +8,7 @@
 -export ([ downgrade/3,
            downgrade/5,
            local_error_msg/2,
+           make_appup/5,
            start/2,
            start/3,
            stop/2,
@@ -132,6 +133,44 @@ local_error_msg (Format, Args) ->
     error_logger:error_msg (Format, Args)
   after
     erlang:group_leader (Leader, self ())
+  end.
+
+%% @spec make_appup (atom (), string (), string (), string (), string ()) -> { ok, AppUp } | { error, atom () }
+%% @doc Automatically generate an appup file for the given application 
+%% upgrading or downgrading between earlier version and later version.
+%% Successful return contains a tuple which is a valid OTP appup specification.
+%% @end
+
+make_appup (Application, EarlierVersion, LaterVersion, EarlierDir, LaterDir) ->
+  case file:consult (EarlierDir ++ "/ebin/" ++
+                     atom_to_list (Application) ++ ".app")
+  of
+    { ok, [ { application, Application, EarlierProps } ] } ->
+      case vsn (EarlierProps) =:= EarlierVersion of
+        true ->
+          case file:consult (LaterDir ++ "/ebin/" ++
+                             atom_to_list (Application) ++ ".app")
+	  of
+            { ok, [ { application, Application, LaterProps } ] } ->
+              case vsn (LaterProps) =:= LaterVersion of
+                true ->
+		  make_appup (Application,
+			      EarlierVersion,
+			      EarlierProps,
+			      LaterVersion,
+			      LaterDir,
+			      LaterProps);
+                false ->
+                  { error, bad_new_appvsn }
+              end;
+            _ ->
+	      { error, bad_new_appfile }
+          end;
+        false ->
+          { error, bad_old_appvsn }
+      end;
+    _ ->
+      { error, bad_old_appfile }
   end.
 
 %% @spec start (atom(), string())
@@ -688,38 +727,6 @@ local_info_msg (Format, Args) ->
     error_logger:info_msg (Format, Args)
   after
     erlang:group_leader (Leader, self ())
-  end.
-
-make_appup (Application, EarlierVersion, LaterVersion, EarlierDir, LaterDir) ->
-  case file:consult (EarlierDir ++ "/ebin/" ++
-                     atom_to_list (Application) ++ ".app")
-  of
-    { ok, [ { application, Application, EarlierProps } ] } ->
-      case vsn (EarlierProps) =:= EarlierVersion of
-        true ->
-          case file:consult (LaterDir ++ "/ebin/" ++
-                             atom_to_list (Application) ++ ".app")
-	  of
-            { ok, [ { application, Application, LaterProps } ] } ->
-              case vsn (LaterProps) =:= LaterVersion of
-                true ->
-		  make_appup (Application,
-			      EarlierVersion,
-			      EarlierProps,
-			      LaterVersion,
-			      LaterDir,
-			      LaterProps);
-                false ->
-                  { error, bad_new_appvsn }
-              end;
-            _ ->
-	      { error, bad_new_appfile }
-          end;
-        false ->
-          { error, bad_old_appvsn }
-      end;
-    _ ->
-      { error, bad_old_appfile }
   end.
 
 make_appup (Application,

@@ -9,7 +9,9 @@
 -endif.
 
 %% @spec load_application (App::atom()) -> ok | { error, Reason }
-%% @doc Load the given application App, obeying an override resource
+%% @doc We're having problems with this, so for now this is equivalent
+%% to application:load/1.  Here's what we'd like it to do eventually:
+%% Load the given application App, obeying an override resource
 %% file App.app in the directory $ERLRC_ROOT/applications.
 %% for override spec of:
 %% <code>
@@ -38,19 +40,22 @@ load_application (erlrc) ->
   % So, there can be no overrides of erlrc's application spec.
   application:load (erlrc);
 
-load_application (App) ->
-  try
-    AppsDir = get_apps_dir (),
-    Spec = load_resource_file (AppsDir, App),
-    case application:load (Spec) of
-      ok ->
-	ok;
-      { error, LoadReason } ->
-	throw ({ error, LoadReason })
-    end
-  catch
-    throw:Error -> { error, Error }
-  end.
+load_application (X) ->
+  application:load (X).
+
+%load_application (App) ->
+%  try
+%    AppsDir = get_apps_dir (),
+%    Spec = load_resource_file (AppsDir, App),
+%    case application:load (Spec) of
+%      ok ->
+%	ok;
+%      { error, LoadReason } ->
+%	throw ({ error, LoadReason })
+%    end
+%  catch
+%    throw:Error -> { error, Error }
+%  end.
 
 get_apps_dir () ->
   Root = case os:getenv ("ERLRC_ROOT") of
