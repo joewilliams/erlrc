@@ -1,4 +1,7 @@
-=Version 0.2.0= NOT YET RELEASED
+=Version 0.2.1= 
+  * add trailing '.' to output of erlrc-makeappup script 
+
+=Version 0.2.0= 
   * simpler error when load fails for erlrc_lib:load_application 
   * disable overrides for now, causing dialyzer freakouts
   * standalone erlrc-makeappup script

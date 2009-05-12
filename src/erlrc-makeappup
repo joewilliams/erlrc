@@ -58,7 +58,7 @@ main (Args=[ AppName, EarlierVersion, LaterVersion, EarlierDir, LaterDir ]) ->
                                 LaterDir) of
     { ok, AppUp } ->
       Stdout = open_port ({ fd, 0, 1 }, [ out ]),
-      port_command (Stdout, io_lib:format ("~p~n", [ AppUp ])),
+      port_command (Stdout, io_lib:format ("~p.~n", [ AppUp ])),
       timer:sleep (10),
       erlang:halt (0);
     { error, What } ->
