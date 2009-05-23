@@ -22,6 +22,10 @@ FW_PACKAGE_REPLACES=""
 FW_PACKAGE_BUILD_DEPENDS="eunit, n54-dupload-conf"
 FW_PACKAGE_BUILD_CONFLICTS=""
 
+FW_SUBVERSION_TAG_ROOT="https://erlrc.googlecode.com/svn/tags/"
+
+FW_DUPLOAD_ARGS=${FW_DUPLOAD_ARGS-"-t dukes"}
+
 # uncomment and set manually if autodetection of modules is incorrect
 # FW_ERL_APP_MODULES=""
 
@@ -42,7 +46,3 @@ FW_PACKAGE_BUILD_CONFLICTS=""
 # uncomment to define the application environment variables. should be an 
 # erlang expression which evaluates to a list.
 FW_ERL_APP_ENVIRONMENT="[ { root_dir, \"/etc/erlrc.d\" } ]"
-
-FW_SUBVERSION_TAG_ROOT="https://erlrc.googlecode.com/svn/tags/"
-
-FW_DUPLOAD_ARGS=${FW_DUPLOAD_ARGS-"-t dukes"}
