@@ -1,0 +1,17 @@
+#! /bin/sh
+
+if test -d fw/bin
+  then
+    PATH="`pwd`/fw/bin:$PATH"
+    export PATH
+  fi
+
+fwb=`which fw-bootstrap`
+
+if test -z "$fwb"
+  then
+    echo "bootstrap: fatal: fw-bootstrap not installed or not in PATH" 1>&2
+    exit 1
+  fi
+
+"$fwb" --fw_version "0.1.34" --name apt-snapshot --template script --revision svn --svn_project_path https://erlrc.googlecode.com/svn/trunk/apt-snapshot --svn_tag_root https://erlrc.googlecode.com/svn/tags/apt-snapshot "$@"

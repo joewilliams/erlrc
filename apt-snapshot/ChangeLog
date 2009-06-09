@@ -1,0 +1,11 @@
+Version 0.2.0
+  * introduce the install command [ does not compute uninstalls ]
+
+Version 0.1.0
+  * support fetch command to fetch snapshot files to local dir
+  * support snapshot files via absolute path name "/path/snapshot"
+  * support snapshot files relative to current directory "./snapshot"
+  * quoting cleanup
+
+Version 0.0.0
+  * Initial version.
