@@ -31,3 +31,5 @@ FW_PACKAGE_BUILD_CONFLICTS=""
 
 # set to the directory in which version-named tags will be created
 FW_SUBVERSION_TAG_ROOT="https://erlrc.googlecode.com/svn/tags/ec2-do"
+
+FW_DUPLOAD_ARGS=${FW_DUPLOAD_ARGS-"-t dukeshardy"}
