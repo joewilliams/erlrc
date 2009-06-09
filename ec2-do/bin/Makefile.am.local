@@ -1,0 +1,8 @@
+# put whatever (auto)make commands here, they will be included from Makefile.am
+
+dist_bin_SCRIPTS =		\
+  ec2-do
+
+.PHONY: check-script-escript-%
+check-script-escript-%:
+	escript -s $*

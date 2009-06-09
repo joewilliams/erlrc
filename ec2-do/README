@@ -1,0 +1,1 @@
+ec2-do provides rolling window execution of commands on an ec2 security group.

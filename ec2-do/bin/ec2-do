@@ -1,0 +1,588 @@
+#! /usr/bin/env escript
+% vim: filetype=erlang
+
+-include_lib("kernel/include/file.hrl").
+
+%-=====================================================================-
+%-                              xmerl.hrl                              -
+%-=====================================================================-
+
+%% -include_lib ("xmerl/include/xmerl.hrl").
+%% xmerl/include/xmerl.hrl contains macros, which flass escript
+
+%% namespace record
+-record(xmlNamespace,{
+	  default = [],
+	  nodes = []
+	 }).
+
+%% XML Element
+%% content = [#xmlElement()|#xmlText()|#xmlPI()|#xmlComment()|#xmlDecl()]
+-record(xmlElement,{
+	  name,			% atom()
+	  expanded_name = [],	% string() | {URI,Local} | {"xmlns",Local}
+	  nsinfo = [],	        % {Prefix, Local} | []
+	  namespace=#xmlNamespace{},
+	  parents = [],		% [{atom(),integer()}]
+	  pos,			% integer()
+	  attributes = [],	% [#xmlAttribute()]
+	  content = [],
+	  language = "",	% string()
+	  xmlbase="",           % string() XML Base path, for relative URI:s
+	  elementdef=undeclared % atom(), one of [undeclared | prolog | external | element]
+	 }).
+
+%% plain text
+%% IOlist = [char() | binary () | IOlist]
+-record(xmlText,{
+	  parents = [],	% [{atom(),integer()}]
+	  pos,		% integer()
+	  language = [],% inherits the element's language
+	  value,	% IOlist()
+	  type = text   % atom() one of (text|cdata)
+	 }).
+
+%-=====================================================================-
+%-                                eoh4x                                -
+%-=====================================================================-
+
+-record (config, { ec2_group = [],
+                   hostlist = [],
+                   batch_mode = false,
+                   detailed = false,
+                   max_procs = 1,
+                   max_line = undefined,
+                   expert = false,
+                   quiet = false,
+                   verbose = false,
+                   use_hostcache = false,
+                   hostcache = undefined,
+                   hostcache_ttl = 86400,
+                   tenacious = false }).
+
+-record(spawner, { num_procs, max_procs, tenacious, stop = false }).
+
+default_cache_dir() -> 
+  os:getenv("HOME") ++ "/.ec2-do/".
+
+default_cache_filename(Group) -> 
+  default_cache_dir() ++ Group ++ ".txt".
+
+remove_cache_files([]) -> ok;
+remove_cache_files([G|Group]) -> 
+  Filename = default_cache_filename(G),
+  case file:delete(Filename) of 
+    ok -> ok;
+    {error, enoent} -> ok;
+    {error, Error } -> exit({Filename, Error})
+  end,
+  remove_cache_files(Group).
+
+% Get hosts for "default" if no group given.
+get_hosts_cached (Config = #config{ ec2_group = [], hostlist = []} ) -> 
+  get_hosts_cached (Config#config{ ec2_group = ["default"]} ); 
+
+% Get hosts skipping cache removing any default cache files
+get_hosts_cached (#config{ 
+  hostlist = [],
+  ec2_group = Group,
+  hostcache = undefined,
+  use_hostcache = false }) ->
+    remove_cache_files(Group),
+    get_hosts(Group);
+
+% get hosts using cache if possible, otherwise cache results
+get_hosts_cached (#config{ 
+  hostlist = [],
+  ec2_group = Group,
+  hostcache = undefined,
+  use_hostcache = true,
+  hostcache_ttl = Ttl }) ->
+    get_hosts_maybe_from_cache(Group, Ttl);
+
+% get hosts specifically from a file.  
+get_hosts_cached (#config{ 
+  hostcache = Filename,
+  hostlist = [] }) ->
+    case file:read_file(Filename) of
+      { ok, FileData } -> file_to_list(FileData);
+      { error, enoent } -> exit({ enoent, Filename})
+    end;
+
+get_hosts_cached (Config = #config{ hostlist = HostList }) ->
+  HostList ++ get_hosts_cached( Config#config{ hostlist = [] }).
+
+
+make_cache_dir() ->
+  Dir = default_cache_dir(),
+  case file:make_dir(Dir) of 
+    ok -> ok;
+    { error, eexist } -> ok;
+    { error, Error } -> exit ( {Dir, Error});
+    Any -> exit({turds, Any})
+  end.
+
+
+write_hosts_cache(Group, Hosts) -> 
+    Filename = default_cache_filename(Group),
+    ok = hosts_to_file(Hosts,Filename).
+
+
+get_hosts_maybe_from_cache(Group, Ttl) -> 
+  get_hosts_maybe_from_cache(Group, Ttl, [], []). 
+
+get_hosts_maybe_from_cache([], _Ttl, Hosts, Needed) -> 
+  Hosts ++ get_hosts_and_cache(Needed);
+get_hosts_maybe_from_cache([G|Group], Ttl, Hosts, Needed) ->
+  Filename = default_cache_filename(G),
+  case file:read_file_info(Filename) of
+    { ok,#file_info{ mtime = Mtime } } -> 
+      case age(Mtime) < Ttl of 
+        true -> 
+          TheseHosts = get_hosts_cached(#config{hostcache = Filename}),
+          get_hosts_maybe_from_cache(Group, Ttl, Hosts ++ TheseHosts, Needed);
+        false-> 
+          get_hosts_maybe_from_cache(Group, Ttl, Hosts, [ G | Needed ])
+      end;
+    { error, enoent } -> 
+        get_hosts_maybe_from_cache(Group, Ttl, Hosts, [ G | Needed ]);
+    { error, Error } ->  
+      exit(Error)
+  end.
+
+
+get_hosts_and_cache(Group) -> 
+  make_cache_dir(),
+  Instances = ec2_describe_instances(),
+  get_hosts_and_cache(Group, Instances).
+
+get_hosts_and_cache([], _Instances) -> [];
+get_hosts_and_cache([G|Groups], Instances) -> 
+  Hosts = get_hosts(G, Instances),
+  write_hosts_cache(G, Hosts),
+  Hosts ++ get_hosts_and_cache(Groups).
+
+
+age(Mtime) -> 
+  [Umtime | _] = calendar:local_time_to_universal_time_dst(Mtime),
+  Now = calendar:now_to_universal_time(erlang:now()),
+  calendar:datetime_to_gregorian_seconds(Now) -
+    calendar:datetime_to_gregorian_seconds(Umtime).
+
+
+file_to_list(B) -> 
+  file_to_list(B, [], []).
+
+file_to_list(<<"\r\n", Tail/binary>>, CurAcc, LinesAcc) ->
+  file_to_list(Tail, [], [ lists:reverse(CurAcc) | LinesAcc ]);
+
+file_to_list(<<"\r", Tail/binary>>, CurAcc, LinesAcc) ->
+  file_to_list(Tail, [], [ lists:reverse(CurAcc) | LinesAcc ]);
+
+file_to_list(<<"\n", Tail/binary>>, CurAcc, LinesAcc) ->
+  file_to_list(Tail, [], [ lists:reverse(CurAcc) | LinesAcc ]);
+
+file_to_list(<<H:8, Tail/binary>>, CurAcc, LinesAcc) ->
+  file_to_list(Tail, [ H | CurAcc ],  LinesAcc);
+
+file_to_list(<<>>, [], LineAcc) -> 
+  lists:reverse(LineAcc);
+
+file_to_list(<<>>, CurAcc, LineAcc) -> 
+  file_to_list(<<>>, [], [ CurAcc | LineAcc ]).
+
+
+
+hosts_to_file(Hosts,Filename) -> 
+  file:write_file(Filename, 
+    erlang:list_to_binary([ H ++ "\n" || H <- Hosts])).
+
+ec2_describe_instances() -> 
+  #xmlNamespace{} = #xmlNamespace{},
+
+  { ok, AccessKeyIdBin } = file:read_file ("/usr/share/n54/access-key-id"),
+  { ok, SecretAccessKeyBin } = 
+    file:read_file ("/usr/share/n54/secret-access-key"),
+  Keys = aws_keys:new (binary_to_list (AccessKeyIdBin),
+                       binary_to_list (SecretAccessKeyBin)),
+  { { "HTTP/1.1", 200, "OK" }, 
+    _Headers, 
+    Body } = aws_instance:describe_all (Keys),
+
+  { #xmlElement{ name = 'DescribeInstancesResponse',
+                 content = Content }, [] } = xmerl_scan:string (Body),
+
+  [ {G, HostName} ||
+    #xmlElement{ name = 'reservationSet', 
+                 content = ReservationSet } <- Content,
+    #xmlElement{ name = 'item', 
+                 content = Item } <- ReservationSet,
+    { G, HostName } <- 
+      [ { G, H } ||
+        G <- [ iolist_to_binary (V) ||
+               #xmlElement{ name = 'groupSet',
+                            content = GroupSet } <- Item,
+               #xmlElement{ name = 'item',
+                            content = GroupSetItem } <- GroupSet,
+               #xmlElement{ name = 'groupId',
+                            content = GroupId } <- GroupSetItem,
+               #xmlText{ value = V } <- GroupId ],
+        H <- [ HostName ||
+               #xmlElement{ name = 'instancesSet',
+                            content = InstanceSet } <- Item,
+               #xmlElement{ name = 'item',
+                            content = InstanceSetItem } <- InstanceSet,
+               #xmlElement{ name = 'dnsName',
+                            content = DnsName } <- InstanceSetItem,
+               #xmlText{ value = HostName } <- DnsName ] ]
+    ].
+
+get_hosts (Group) -> 
+  get_hosts(Group, ec2_describe_instances() ).
+
+get_hosts (Group, Instances) when is_list(Group), is_list(hd(Group)) -> 
+  get_hosts([list_to_binary(G) || G <- Group], Instances);
+get_hosts (Group, Instances) when is_list(Group), is_binary(hd(Group)) ->
+  [ HostName || { G, HostName } <- Instances, lists:member(G, Group) ];
+get_hosts (Group, Instances) when is_list(Group) ->
+  get_hosts ([list_to_binary(Group)], Instances).
+
+
+pmoch ([ "" | L ]) -> L;
+pmoch (L) -> L.
+
+% This is not real priority receive, but hopefully will guard against
+% minor reorderings of EXIT vs. output
+
+dome_loop (Host, 
+           Conf = #config{ batch_mode = Batch, quiet = Quiet },
+           Port,
+           Acc) ->
+  receive
+    { Port, { data, { _Flag, Line } } } ->
+      case { Quiet, Batch } of
+        { true, _ } -> 
+          dome_loop (Host, Conf, Port, Acc);
+        { false, false } ->
+          case Acc of
+            [] ->
+              ok;
+            [ Last ] ->
+              io:format ("~s: ~s~n", [ Host, Last ])
+          end,
+          dome_loop (Host, Conf, Port, [ Line ]);
+        { false, true } -> 
+          dome_loop (Host, Conf, Port, [ Line | Acc ])
+      end
+    after 1000 ->
+      receive
+        { 'EXIT', Port, _Why } ->
+          receive
+            { Port, { exit_status, Status } } -> 
+              case { Quiet, Batch } of
+                { true, _ } ->
+                  Status;
+                { false, false } ->
+                    case Acc of
+                    [] ->
+                      ok;
+                    [ Last ] ->
+                      io:format ("~s: ~s~n", [ Host, Last ])
+                  end;
+                { false, true } ->
+                  io:format ("~s~nOutput for ~s:~n~s~n~s",
+                             [ [ $- || _ <- lists:seq (1, 40) ],
+                               Host,
+                               [ $- || _ <- lists:seq (1, 40) ],
+                               lists:flatten 
+                                 ([ [ L, "\n" ] || 
+                                    L <- lists:reverse (pmoch (Acc)) ]) ])
+              end,
+              Status
+          end
+      after 0 ->
+        dome_loop (Host, Conf, Port, Acc)
+      end
+  end.
+
+dome_loop (Host, Conf, Port) ->
+  dome_loop (Host, Conf, Port, []).
+
+start_port (Host, #config{ max_line = MaxL, 
+                           batch_mode = Batch,
+                           expert = Expert }) ->
+  Prefix = if not Expert -> "ssh root@$EC2_HOST -- "; true -> "" end,
+  open_port ({ spawn, Prefix ++ "sh -s ec2-do:cmd" }, 
+             [ stream,
+               case Batch of
+                 true -> { line, MaxL };
+                 false -> { line, MaxL - length (Host) - 2 }
+               end,
+               exit_status,
+               stderr_to_stdout,
+               { env, [ { "EC2_HOST", Host } ] } ]).
+
+join (StringList, Seperator) ->
+  binary_to_list (iolist_to_binary ([ [ S, Seperator ] || S <- StringList ])).
+
+shell_quote ([], Acc) ->
+  lists:reverse ([ $' | Acc ]);
+shell_quote ([ $' | T ], Acc) ->
+  shell_quote (T, [ $', $", $', $\\, $", $' | Acc ]);
+shell_quote ([ $\\ | T ], Acc) ->
+  shell_quote (T, [ $\\, $\\ | Acc ]);
+shell_quote ([ C | T ], Acc) ->
+  shell_quote (T, [ C | Acc ]).
+
+shell_quote (S) -> 
+  shell_quote (S, [ $' ]).
+
+mk_cmd (Cmd) ->
+  io_lib:format ("(~s~n) </dev/null; exit $?;~n", 
+                 [ join ([ shell_quote (C) || C <- Cmd ], " ") ]).
+
+check_status (Spawner = #spawner{ num_procs = 0 }) ->
+  Spawner;
+check_status (Spawner = #spawner{ stop = true }) ->
+  Spawner;
+check_status (Spawner = #spawner{ num_procs = NumProcs,
+                                  tenacious = Tenacious }) ->
+  receive
+    { 'DOWN', _, _, _, { _Tag, 0 } } ->
+      check_status (Spawner#spawner{ num_procs = NumProcs - 1 });
+    { 'DOWN', _, _, _, _Other } when Tenacious ->
+      check_status (Spawner#spawner{ num_procs = NumProcs - 1 });
+    { 'DOWN', _, _, _, _Other } ->
+      Spawner#spawner{ num_procs = NumProcs - 1, stop = true }
+  after 0 ->
+      Spawner
+  end.
+
+spawn_monitor_with_limit (_, Spawner = #spawner{ stop = true }) ->
+  { { skipped, void }, Spawner };
+spawn_monitor_with_limit (Fun, 
+                          Spawner = #spawner{ num_procs = NumProcs,
+                                              max_procs = MaxProcs,
+                                              tenacious = Tenacious }) ->
+  case NumProcs >= MaxProcs of
+    true ->
+      receive
+        { 'DOWN', _, _, _, { _Tag, 0 } } ->
+          spawn_monitor_with_limit 
+            (Fun, Spawner#spawner{ num_procs = NumProcs - 1 });
+        { 'DOWN', _, _, _, _Other } when Tenacious ->
+          spawn_monitor_with_limit 
+            (Fun, Spawner#spawner{ num_procs = NumProcs - 1 });
+        { 'DOWN', _, _, _, _Other } ->
+          { { skipped, void }, 
+            Spawner#spawner{ num_procs = NumProcs - 1, stop = true } }
+      end;
+    false ->
+      NewSpawner = check_status (Spawner),
+      case NewSpawner#spawner.stop of
+        true ->
+          { { skipped, void }, NewSpawner };
+        false ->
+          Pid = erlang:spawn_link (Fun),
+          MRef = erlang:monitor (process, Pid),
+          { { Pid, MRef }, NewSpawner#spawner{ num_procs = NumProcs + 1 } }
+      end
+  end.
+
+unix_cmd (Host, Conf, Cmd, Spawner) ->
+  Tag = make_ref (),
+  { { Pid, _ }, NewSpawner } = 
+    spawn_monitor_with_limit (
+      fun () ->
+        process_flag (trap_exit, true),
+        Stderr = open_port ({ fd, 0, 2 }, [ out ]),
+        Port = start_port (Host, Conf),
+        case Conf#config.verbose of
+          true ->
+            port_command (Stderr, io_lib:format ("~s~n", [ mk_cmd (Cmd) ]));
+          false ->
+            ok
+        end,
+        erlang:port_command (Port, mk_cmd (Cmd)),
+        exit ({ Tag, dome_loop (Host, Conf, Port) })
+      end,
+      Spawner),
+  { { Host, Tag, Pid }, NewSpawner }.
+
+brief_summary (Stderr, Result) ->
+  NumSuccess = length ([ 1 || { success, _ } <- Result ]),
+  NumFailure = length ([ 1 || { { failure, _ }, _ } <- Result ]),
+  NumInternal = length ([ 1 || { { internal_error, _ }, _ } <- Result ]),
+  NumSkipped = length ([ 1 || { skipped, _ } <- Result ]),
+  port_command 
+    (Stderr,
+     io_lib:format ("Successes: ~p\tFailures: ~p\tInternal Errors: ~p\t" ++
+                    "Skipped: ~p~n",
+                    [ NumSuccess,
+                      NumFailure,
+                      NumInternal,
+                      NumSkipped ])),
+  NumFailure + NumInternal.
+
+detailed_summary (_, []) -> ok;
+detailed_summary (Stderr, [ { skipped, Host } | Rest ]) ->
+  port_command (Stderr, io_lib:format ("~p: skipped~n", [ Host ])),
+  detailed_summary (Stderr, Rest);
+detailed_summary (Stderr, [ { success, Host } | Rest ]) ->
+  port_command (Stderr, io_lib:format ("~p: success~n", [ Host ])),
+  detailed_summary (Stderr, Rest);
+detailed_summary (Stderr, [ { { failure, Status }, Host } | Rest ]) ->
+  port_command (Stderr, io_lib:format ("~p: exit code ~p~n", [ Host, Status ])),
+  detailed_summary (Stderr, Rest);
+detailed_summary (Stderr, [ { { internal_error, Error }, Host } | Rest ]) ->
+  port_command (Stderr,
+                io_lib:format ("~p: internal error ~p~n", [ Host, Error ])),
+  detailed_summary (Stderr, Rest).
+
+parse_args ([ "--" | More ], Conf) -> 
+  { Conf, More };
+parse_args ([ "-g", Group | More ], Conf) ->
+  parse_args (More, Conf#config{ ec2_group = [ Group | Conf#config.ec2_group ] });
+parse_args ([ "-b" | More ], Conf) ->
+  parse_args (More, Conf#config{ batch_mode = true });
+parse_args ([ "-c" | More ], Conf) ->
+  parse_args (More, Conf#config{ use_hostcache = true });
+parse_args ([ "-C", Filename | More ], Conf) ->
+  parse_args (More, Conf#config{ hostcache = Filename });
+parse_args ([ "-d" | More ], Conf) ->
+  parse_args (More, Conf#config{ detailed = true });
+parse_args ([ "-h" | _ ], _) ->
+  usage (),
+  halt (1);
+parse_args ([ "-H", Host | More ], Conf) ->
+  parse_args (More, Conf#config{ hostlist = [ Host | Conf#config.hostlist ] });
+parse_args ([ "-m", Max | More ], Conf) ->
+  MaxProcs = list_to_integer (Max),
+  true = (MaxProcs > 0),
+  parse_args (More, Conf#config{ max_procs = MaxProcs });
+parse_args ([ "-M" | More ], Conf) ->
+  parse_args (More, Conf#config{ max_procs = 1000 });
+parse_args ([ "-l", Line | More ], Conf) ->
+  MaxLine = list_to_integer (Line),
+  true = (MaxLine > 0),
+  parse_args (More, Conf#config{ max_line = MaxLine });
+parse_args ([ "-q" | More ], Conf) ->
+  parse_args (More, Conf#config{ quiet = true });
+parse_args ([ "-t" | More ], Conf) ->
+  parse_args (More, Conf#config{ tenacious = true });
+parse_args ([ "-v" | More ], Conf) ->
+  parse_args (More, Conf#config{ verbose = true });
+parse_args ([ "-x" | More ], Conf) ->
+  parse_args (More, Conf#config{ expert = true });
+parse_args (L, Conf) ->
+  { Conf, L }.
+
+parse_args (Args) ->
+  parse_args (Args, #config{ max_line = default_terminal_width() }).
+
+default_terminal_width() ->
+  Cmd = "tput cols",
+
+  % use of os:cmd seemed to not get the correct terminal width.
+  P = open_port({spawn,Cmd}, []),
+  D = receive 
+    {P, {data, Data}} -> Data;
+    {'EXIT', P, _ } -> ""
+  end,
+  try port_close(P) catch _ : _ -> ok end,
+
+  case string:to_integer(D) of
+    { I, "\n" } when is_integer(I) -> I;
+    _ -> 80 
+  end.
+  
+
+main (Args) ->
+  process_flag (trap_exit, true),
+  default_terminal_width(), 
+  { Conf, Rest } = try parse_args (Args) catch _ : _ -> usage (), halt (1) end,
+  case length (Rest) > 0 of true -> ok; false -> usage (), halt (1) end,
+  { Procs, _ } = 
+    lists:foldl (fun (Host, { P, Spawner }) ->
+                   { NewP, NewS } = unix_cmd (Host, Conf, Rest, Spawner),
+                   { [ NewP | P ], NewS }
+                 end,
+                 { [], #spawner{ num_procs = 0, 
+                                 max_procs = Conf#config.max_procs,
+                                 tenacious = Conf#config.tenacious } },
+                 get_hosts_cached (Conf)),
+  Result = 
+    lists:sort ([ case Pid of
+                    skipped -> { skipped, Host };
+                    _ ->
+                      receive { 'EXIT', Pid, { Tag, 0 } } -> 
+                                 { success, Host };
+                              { 'EXIT', Pid, { Tag, Status } } ->
+                                 { { failure, Status }, Host };
+                              { 'EXIT', Pid, Error } ->
+                                 { { internal_error, Error }, Host }
+                      end 
+                  end ||
+                  { Host, Tag, Pid } <- Procs ]),
+  Stderr = open_port ({ fd, 0, 2 }, [ out ]),
+  case Conf#config.detailed of
+    true ->
+      port_command (Stderr, "************* Summary *****************\n"),
+      detailed_summary (Stderr, Result);
+    false ->
+      ok
+  end,
+  case brief_summary (Stderr, Result) > 0 of
+    true -> halt (1);
+    false -> ok
+  end.
+
+usage () ->
+  Stderr = open_port ({ fd, 0, 2 }, [ out ]),
+  port_command (Stderr, 
+                "usage: ec2-do [ options ] command [ args ...]\n" ++
+                "\n" ++
+                "  run command for each host in an ec2 security group,\n" ++
+                "  setting the environment variable EC2_HOST.\n" ++
+                "\n" ++
+                "example:\n" ++
+                "  ec2-do apt-get update \\; apt-get install libcrow\n" ++
+                "\n" ++
+                "options is zero or more of \n" ++
+                "  --\n" ++
+                "    treat the rest of the command line literally\n" ++
+                "  -b\n" ++
+                "    batch mode: output from host is displayed\n" ++ 
+                "                after host command exits\n" ++
+                "                (default: interleave)\n" ++
+                "  -c\n" ++
+                "    caching: host list is cached for 24hrs\n" ++ 
+                "    without -c the cache file is removed\n" ++
+                "    note: this doesn't appear any faster at the moment.\n"
+                "  -C FILE\n" ++
+                "    get host list from FILE '-g' and '-c' are ignored\n" ++
+                "  -d\n" ++
+                "    produce detailed summary on stderr (default: no)\n" ++
+                "  -g ec2_group\n" ++
+                "    specify ec2_group (default: default)\n" ++
+                "    May be specified multiple times.\n"
+                "  -h\n" ++
+                "    display this help message and exit\n" ++ 
+                "  -H hostname\n"
+                "    add host 'hostname' to the list of hosts\n"
+                "  -l positive_integer \n" ++
+                "    maximum line to display (default: 80)\n" ++
+                "  -m positive_integer\n" ++
+                "    maximum number of concurrent process (default: 1)\n" ++
+                "  -M\n" 
+                "    set maximum number of concurrent processes to 1000\n"
+                "  -q\n" ++
+                "    quiet mode: output from commands is not displayed\n" ++
+                "                (default: no)\n" ++
+                "  -t tenacious mode\n" ++
+                "    continue even if errors are encountered (default: no)\n" ++
+                "  -v verbose mode\n" ++
+                "    show commands being executed (default: no)\n" ++
+                "  -x expert mode\n" ++
+                "    do NOT prepend each command with 'ssh root@$EC2_HOST --'\n"),
+  timer:sleep (10).

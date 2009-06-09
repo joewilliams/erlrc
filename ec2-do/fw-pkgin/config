@@ -1,0 +1,33 @@
+# The FW_PACKAGE_MAINTAINER field is populated with the 
+# environment variable FW_PACKAGE_DEFAULT_MAINTAINER if non-empty
+
+FW_PACKAGE_NAME="ec2-do"
+FW_PACKAGE_VERSION="0.0.0"
+FW_PACKAGE_MAINTAINER="Paul Mineiro <paul-fw@mineiro.com>"
+FW_PACKAGE_SHORT_DESCRIPTION="A short description."
+FW_PACKAGE_DESCRIPTION=`cat README`
+FW_PACKAGE_ARCHITECTURE_DEPENDENT="0"
+
+# Dependency information.  The native syntax corresponds to Debian,
+# http://www.debian.org/doc/debian-policy/ch-relationships.html
+# Section 7.1 "Syntax of Relationship Fields"
+# 
+# For other packaging systems, the syntax is translated for you.
+
+FW_PACKAGE_DEPENDS="erlang-base | erlang-base-hipe | erlang-otp,
+                    erlang-nox | erlang-x11 | fink,
+                    erlsom,
+                    virtuerl"
+FW_PACKAGE_CONFLICTS=""
+FW_PACKAGE_PROVIDES=""
+FW_PACKAGE_REPLACES=""
+FW_PACKAGE_SUGGESTS=""
+
+FW_PACKAGE_BUILD_DEPENDS="erlang-dev [!darwin-i386], erlang-otp [darwin-i386],
+                          erlsom, 
+                          fw-template-erlang,
+                          virtuerl"
+FW_PACKAGE_BUILD_CONFLICTS=""
+
+# set to the directory in which version-named tags will be created
+FW_SUBVERSION_TAG_ROOT="https://erlrc.googlecode.com/svn/tags/ec2-do"

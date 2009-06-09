@@ -1,0 +1,10 @@
+dnl -- include additional autoconf commands here
+dnl -- do not include AC_OUTPUT, this is called for you
+
+FW_TEMPLATE_ERLANG_CHECK_MODULE([erlsom],
+                                [],
+                                [AC_MSG_ERROR([can't find dependency erlsom (http://erlsom.sourceforge.net/)])])
+
+FW_TEMPLATE_ERLANG_CHECK_MODULE([aws_keys],
+                                [],
+                                [AC_MSG_ERROR([can't find dependency virtuerl (http://code.google.com/p/virtuerl/)])])
