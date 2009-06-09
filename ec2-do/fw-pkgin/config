@@ -2,7 +2,7 @@
 # environment variable FW_PACKAGE_DEFAULT_MAINTAINER if non-empty
 
 FW_PACKAGE_NAME="ec2-do"
-FW_PACKAGE_VERSION="0.0.0"
+FW_PACKAGE_VERSION="0.1.5"
 FW_PACKAGE_MAINTAINER="Paul Mineiro <paul-fw@mineiro.com>"
 FW_PACKAGE_SHORT_DESCRIPTION="A short description."
 FW_PACKAGE_DESCRIPTION=`cat README`
