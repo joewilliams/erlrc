@@ -1,3 +1,6 @@
+Version 0.2.1
+  * release for hardy
+
 Version 0.2.0
   * introduce the install command [ does not compute uninstalls ]
 
