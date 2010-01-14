@@ -35,7 +35,7 @@ for var in cookie ; do
   }
 done
 
-( printf "%s" $cookie > $node_name_file ) 2>/dev/null || {
+printf "%s" $cookie > $node_name_file 2>/dev/null || {
   echo "$id: can't write node file $node_name_file" 1>&2
   exit 1
 }
