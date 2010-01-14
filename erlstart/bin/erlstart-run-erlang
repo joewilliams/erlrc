@@ -1,0 +1,63 @@
+#! /bin/sh
+
+# (Re)Start erlang node.
+
+ERL_CRASH_DUMP=${ERL_CRASH_DUMP-/dev/null}
+export ERL_CRASH_DUMP
+
+id=`basename "$0"`
+
+get_hostname () \
+  {
+    erl -name myerlnodetmp$$ -setcookie $$ -noshell -noinput -eval '
+      [ Host ] = tl (string:tokens (atom_to_list (node ()), "@")),
+      io:format ("~s~n", [ Host ])
+    ' -s init stop
+  }
+
+ERLSTART_CONFIG_FILE="${1-${ERLSTART_CONFIG_FILE-/etc/erlstart.rc}}"
+
+test -r "$ERLSTART_CONFIG_FILE" || {
+  echo "$id: could not find config file $ERLSTART_CONFIG_FILE" 1>&2
+  exit 1
+}
+
+. "$ERLSTART_CONFIG_FILE" 
+
+node_name_file=${node_name_file-/var/lib/erlstartnode}
+hostname=${hostname-`get_hostname`}
+node_name=`basename "$node_name_file"`
+
+for var in cookie ; do
+  eval test -z \"\${$var}\" && {
+    echo "$id: variable $var not specified" 1>&2
+    exit 1
+  }
+done
+
+( printf "%s" $cookie > $node_name_file ) 2>/dev/null || {
+  echo "$id: can't write node file $node_name_file" 1>&2
+  exit 1
+}
+
+erl=`which erl`
+
+test -z "$erl" && {
+  echo "$id: can't find erl" 1>&2
+  exit 1
+}
+
+HEART_COMMAND="$0 $@"
+export HEART_COMMAND
+
+run_heart=${run_heart-"-heart"}
+run_boot=${run_boot-"-boot start_sasl"}
+run_extra_args=${run_extra_args-"-noshell -noinput"}
+
+eval exec $run_wrapper                          \
+          \"\$erl\"                             \
+          $run_heart                            \
+          $run_boot                             \
+          -name \"\$node_name@\$hostname\"      \
+          -setcookie \"\$cookie\"               \
+          $run_extra_args

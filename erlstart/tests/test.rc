@@ -1,0 +1,4 @@
+node_name_file=sock
+hostname='127.0.0.1'
+
+run_extra_args="-noshell -noinput -eval 'ok = file:write_file (\"./wazzup\", <<0>>)' >/dev/null 2>/dev/null"

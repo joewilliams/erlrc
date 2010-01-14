@@ -1,0 +1,52 @@
+#! /bin/sh
+
+# Run a remote shell on the central Erlang instance.
+
+ERL_CRASH_DUMP=${ERL_CRASH_DUMP-/dev/null}
+export ERL_CRASH_DUMP
+
+id=`basename "$0"`
+
+get_hostname () \
+  {
+    erl -name myerlnodetmp$$ -setcookie $$ -noshell -noinput -eval '
+      [ Host ] = tl (string:tokens (atom_to_list (node ()), "@")),
+      io:format ("~s~n", [ Host ])
+    ' -s init stop
+  }
+
+ERLSTART_CONFIG_FILE="${1-${ERLSTART_CONFIG_FILE-/etc/erlstart.rc}}"
+
+test -r "$ERLSTART_CONFIG_FILE" || {
+  echo "$id: could not find config file $ERLSTART_CONFIG_FILE" 1>&2
+  exit 1
+}
+
+. "$ERLSTART_CONFIG_FILE" 
+
+node_name_file=${node_name_file-/etc/erlstartnode}
+
+for file in $node_name_file ; do
+  test -r $file || {
+    echo "$id: could not read $file" 1>&2
+    exit 1
+  }
+done
+
+hostname=${hostname-`get_hostname`}
+main_node_name=`basename "$node_name_file"`
+cookie=`cat "$node_name_file"`
+
+erl=`which erl`
+
+test -z "$erl" && {
+  echo "$id: can't find erl" 1>&2
+  exit 1
+}
+
+eval exec \"\$erl\"                                     \
+          -name \"erlstarttmp\$\$@\$hostname\"          \
+          -hidden                                       \
+          -setcookie \"\$cookie\"                       \
+          -remsh \"\$main_node_name@\$hostname\"        \
+          $remsh_extra_args

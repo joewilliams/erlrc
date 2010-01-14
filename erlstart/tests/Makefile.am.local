@@ -1,0 +1,8 @@
+# put whatever (auto)make commands here, they will be included from Makefile.am
+
+TESTS = 	\
+  test-scripts
+
+EXTRA_DIST +=	\
+  test.rc	\
+  test-scripts

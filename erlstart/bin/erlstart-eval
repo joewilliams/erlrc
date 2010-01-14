@@ -1,0 +1,77 @@
+#! /bin/sh
+
+# Evaluate an expression on the central Erlang instance.
+
+ERL_CRASH_DUMP=${ERL_CRASH_DUMP-/dev/null}
+export ERL_CRASH_DUMP
+
+get_hostname () \
+  {
+    erl -name myerlnodetmp$$ -setcookie $$ -noshell -noinput -eval '
+      [ Host ] = tl (string:tokens (atom_to_list (node ()), "@")),
+      io:format ("~s~n", [ Host ])
+    ' -s init stop
+  }
+
+id=`basename "$0"`
+
+if test $# -eq 2
+  then
+    ERLSTART_CONFIG_FILE="$1"
+    shift
+  else
+    ERLSTART_CONFIG_FILE="${ERLSTART_CONFIG_FILE-/etc/erlstart.rc}"
+  fi
+
+test -r "$ERLSTART_CONFIG_FILE" || {
+  echo "$id: could not find config file $ERLSTART_CONFIG_FILE" 1>&2
+  exit 1
+}
+
+. "$ERLSTART_CONFIG_FILE" 
+
+node_name_file=${node_name_file-/etc/erlstartnode}
+
+for file in $node_name_file ; do
+  test -r $file || {
+    echo "$id: could not read $file" 1>&2
+    exit 1
+  }
+done
+
+hostname=${hostname-`get_hostname`}
+main_node_name=`basename "$node_name_file"`
+cookie=`cat "$node_name_file"`
+
+erl=`which erl`
+
+test -z "$erl" && {
+  echo "$id: can't find erl" 1>&2
+  exit 1
+}
+
+test "x$1" = x && { 
+  echo "usage: $id EXPRESSION" 1>&2
+  exit 1
+}
+script='($_) = @ARGV; s/\\/\\\\/sg; s/"/\\"/sg; s/([^\.])$/$1\./; print $_;'
+to_eval=`perl -e "$script" "$1" `
+
+eval exec \"\$erl\"                                                     \
+          -name \"erlstarttmp\$\$@\$hostname\"                          \
+          -hidden                                                       \
+          -setcookie \"\$cookie\"                                       \
+          -noshell -noinput -eval                                       \
+          "\"
+    MainNode = list_to_atom (\\\"\$main_node_name@\$hostname\\\"),
+    { ok, Scanned, _ } = erl_scan:string (\\\"\$to_eval\\\"),    
+    { ok, Parsed } = erl_parse:parse_exprs (Scanned),            
+    case rpc:call (MainNode, erl_eval, exprs, [ Parsed, [] ]) of 
+      { value, Value, _ } ->                                     
+        io:format (\\\"~p~n\\\", [ Value ]);                     
+      Error ->                                                   
+        erlang:error (Error)                                     
+    end                                                          
+          \""                                                           \
+          -s erlang halt                                                \
+          $eval_extra_args

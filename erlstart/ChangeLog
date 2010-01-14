@@ -1,0 +1,9 @@
+Version 0.0.2
+  * put crash dump setting at very top
+  * set temp node cookie
+
+Version 0.0.1
+  * Improved hostname detection.
+
+Version 0.0.0
+  * Initial version.

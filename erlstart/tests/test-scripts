@@ -1,0 +1,26 @@
+#! /bin/sh
+
+cleanup () \
+  {
+    set +e
+    trap - EXIT
+    killall heart >/dev/null 2>/dev/null
+    epmd -kill >/dev/null 2>/dev/null
+    rm -f sock wazzup
+  }
+
+trap cleanup EXIT
+
+set -e
+
+rm -f sock wazzup
+
+env cookie=turg ../bin/erlstart-run-erlang ./test.rc &
+pid=$!
+
+while test ! -f wazzup
+  do
+    sleep 1
+  done
+
+test ok = `../bin/erlstart-eval ./test.rc 'init:stop ()'`
