@@ -2,7 +2,7 @@
 # variable FW_PACKAGE_DEFAULT_MAINTAINER if non-empty at init time
 
 FW_PACKAGE_NAME="erlstart"
-FW_PACKAGE_VERSION="0.0.0"
+FW_PACKAGE_VERSION="0.0.3"
 FW_PACKAGE_MAINTAINER="Paul Mineiro <paul-fw@mineiro.com>"
 FW_PACKAGE_SHORT_DESCRIPTION="A short description."
 FW_PACKAGE_DESCRIPTION=`cat README`
